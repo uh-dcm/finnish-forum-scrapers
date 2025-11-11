@@ -3,7 +3,7 @@ from uh_scrapy.spiders.yle_spider import YleSpider
 from tests.fake_response_unittest import mock_response, mock_response_from_file
 from uh_scrapy.items import PostItem
 
-class KauppalehtiSpiderTest(unittest.TestCase):
+class YleSpiderTest(unittest.TestCase):
     def setUp(self):
         self.spider = YleSpider()
 
