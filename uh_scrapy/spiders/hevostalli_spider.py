@@ -25,10 +25,9 @@ class HevostalliSpider(scrapy.Spider):
 
     
     def parse(self, response):
-        forum = self.settings["FORUM"]
-        forum = self.config[forum]
-        url_start  = f'http://forum.hevostalli.net/list.php?f={forum}'
-        yield scrapy.Request(url_start, callback=self.parse_threads)
+        for forum in self.config["HEVOSTALLI_FORUMS"].values():
+            url_start  = f'http://forum.hevostalli.net/list.php?f={forum}'
+            yield scrapy.Request(url_start, callback=self.parse_threads)
         
 
     def parse_threads(self, response):

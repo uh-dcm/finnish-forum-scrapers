@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Signal, Slot, QSettings
+from PySide6.QtCore import QObject, Signal, Slot, QSettings, QUrl
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
@@ -46,7 +46,7 @@ def load_spider_classes():
 spiders = load_spider_classes()
 
 def start_spider( process ):
-    process.start()
+    process.start(install_signal_handlers=False)
 
 class Backend(QObject):
     @Slot('QVariantList',str,str,str, str)

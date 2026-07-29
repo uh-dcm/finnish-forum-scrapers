@@ -49,20 +49,23 @@ class HSSpider(scrapy.Spider):
     def parse(self, response):
 
         self.query = self.settings["QUERY"].replace(" ", "%20")
-        self.category = self.config["HS_CATEGORIES"][self.settings["HSCATEGORY"]]
         self.timefrom = self.convert_to_epoch_ms(self.settings["TIMEFROM"])
         self.timeto = self.convert_to_epoch_ms(self.settings["TIMETO"])
-        self.limit = int(self.settings["LIMIT"])
-        self.sort = self.config["HS_SORTING"][self.settings["SORTING"]]
-        
-        url = self.query_to_url(self.count, self.offset)
-        yield scrapy.Request(url, callback=self.parse_threads)
+        self.sort = 'rel'
+        self.limit = 0
+
+        for cat_value in self.config["HS_CATEGORIES"].values():
+            self.offset = 0
+            self.category = cat_value
+            url = self.query_to_url(self.count, self.offset)
+            yield scrapy.Request(url, callback=self.parse_threads, meta={'cat': cat_value, 'offset': 0})
     
  
     
     # Function to collect thread ids
     def parse_threads(self, response):
         
+        self.offset = response.meta['offset']
         data = response.json()
         if data != []:
             for id in [entry['id'] for entry in data]:
@@ -74,8 +77,9 @@ class HSSpider(scrapy.Spider):
     def parse_threads_next_page(self, response):
         if self.limit==0 or self.offset+self.count<self.limit:
             self.offset = self.offset + self.count
+            self.category = response.meta['cat']
             APIurl = self.query_to_url(self.count, self.offset)
-            yield scrapy.Request(APIurl, callback=self.parse_threads)
+            yield scrapy.Request(APIurl, callback=self.parse_threads, meta={'cat': response.meta['cat'], 'offset': self.offset})
 
     # Function to scrape comments from thread
     def scrape_thread(self, response):

@@ -14,6 +14,7 @@ class YleSpider(scrapy.Spider):
     
     def __init__(self, *args, **kwargs):
         super(YleSpider, self).__init__(*args, **kwargs)
+        self.count = 50
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
         
@@ -30,41 +31,43 @@ class YleSpider(scrapy.Spider):
     def parse(self, response):
 
         query = "query=" + self.settings["QUERY"].replace(" ", "%20")
-        category = self.config["YLE_CATEGORIES"][self.settings["CATEGORY"]]
         timeFrom = "timeFrom=" + self.settings["TIMEFROM"]
         timeTo = "timeTo=" + self.settings["TIMETO"]
-        language = self.config["YLE_LANGUAGE"][self.settings["LANGUAGE"]]
-        self.search = [query, category, timeFrom, timeTo , language]
 
         self.count = 50
-        self.offset = 0
         self.limit = 100
 
         self.comments = []
 
-        url = self.query_to_url(self.count, self.offset)
-        return scrapy.Request(url, callback=self.parse_threads)
+        for cat_value in self.config["YLE_CATEGORIES"].values():
+            for lang_value in self.config["YLE_LANGUAGE"].values():
+                self.search = [query, cat_value, timeFrom, timeTo, lang_value]
+                self.offset = 0
+                url = self.query_to_url(self.count, self.offset)
+                yield scrapy.Request(url, callback=self.parse_threads, meta={'search': list(self.search), 'offset': 0})
  
     
     # Function to collect thread ids
     def parse_threads(self, response):
         print('parsing')
         data = response.json()
-        self.total_count = data['meta']['count'] 
+        self.total_count = data['meta']['count']
+        self.search = response.meta['search']
+        self.offset = response.meta['offset']
         if self.total_count != 0:
             for id in [entry['id'] for entry in data['data']]:
                 app_key = 'sfYZJtStqjcANSKMpSN5VIaIUwwcBB6D'
                 app_id = 'yle-comments-plugin'
                 url = f"https://comments.api.yle.fi/v1/topics/{id}/comments/accepted?app_id={app_id}&app_key={app_key}&parent_limit=100"
                 yield scrapy.Request(url, callback=self.scrape_thread)
-            
-        yield self.parse_threads_next_page(response)
+
+        yield from self.parse_threads_next_page(response)
 
     def parse_threads_next_page(self,response):
         if self.offset+self.count<self.total_count:
             self.offset = self.offset + self.count
             APIurl = self.query_to_url(self.count, self.offset)
-            yield scrapy.Request(APIurl, callback=self.parse_threads)
+            yield scrapy.Request(APIurl, callback=self.parse_threads, meta={'search': self.search, 'offset': self.offset})
 
     # Function to scrape comments from thread
     def scrape_thread(self, response):

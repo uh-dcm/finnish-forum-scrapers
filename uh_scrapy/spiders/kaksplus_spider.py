@@ -34,33 +34,26 @@ class KaksplusSpider(scrapy.Spider):
     
     def parse(self, response):
         self.query = self.settings["QUERY"].replace(" ", "%20")
-        self.title_only = self.settings["TITLEONLY"]
-        self.newer_than = self.settings["TIMEFROM"]
-        self.min_reply = self.settings["MINREPLY"]
-        self.forum_section = self.settings["FORUMSECTION"]
-        self.subsections = self.settings["SUBSECTIONS"]
-        self.sort =self.settings["SORTING"]
 
         _xfToken = response.css('input[name="_xfToken"]::attr(value)').get()
-        formdata = {
-            "keywords": self.query,  
-            "c[title_only]": '1' if self.title_only else '0',  
-            "c[newer_than]": self.newer_than,  
-            "c[min_reply_count]": self.min_reply,  
-            "c[nodes][]": self.config['KAKSPLUS_FORUM_SECTIONS'][self.forum_section],  
-            "c[child_nodes]": '1' if self.subsections else '0',  
-            "order": self.sort,  
-            "grouped": '1',    
-            "_xfToken": _xfToken,  
-        }
-        print(formdata)
-
-        yield FormRequest(
-            url='https://keskustelu.kaksplus.fi/keskustelu/haku/search',
-            formdata=formdata,
-            method='POST',
-            callback=self.parse_threads
-        )
+        for section_value in self.config['KAKSPLUS_FORUM_SECTIONS'].values():
+            formdata = {
+                "keywords": self.query,
+                "c[title_only]": '0',
+                "c[newer_than]": self.settings["TIMEFROM"],
+                "c[min_reply_count]": '0',
+                "c[nodes][]": section_value,
+                "c[child_nodes]": '1',
+                "order": 'date',
+                "grouped": '1',
+                "_xfToken": _xfToken,
+            }
+            yield FormRequest(
+                url='https://keskustelu.kaksplus.fi/keskustelu/haku/search',
+                formdata=formdata,
+                method='POST',
+                callback=self.parse_threads
+            )
 
     def parse_threads(self, response):
         links = response.xpath('//h3[@class="contentRow-title"]/a/@href').getall()

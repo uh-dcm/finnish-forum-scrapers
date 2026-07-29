@@ -20,36 +20,30 @@ class KauppalehtiSpider(scrapy.Spider):
     
     def parse(self, response):
         self.query = self.settings["QUERY"].replace(" ", "%20")
-        self.title_only = self.settings["TITLEONLY"]
-        self.newer_than = self.settings["TIMEFROM"]
-        self.older_than = self.settings["TIMETO"]
-        self.min_reply = self.settings["MINREPLY"]
-        self.forum_section = self.settings["FORUMSECTION"]
-        self.subsections = self.settings["SUBSECTIONS"]
-        self.sort = self.settings["SORTING"]
 
         _xfToken = response.css("input[name='_xfToken']::attr(value)").get()
         if not _xfToken:
             self.logger.error("Could not retrieve _xfToken")
             return
-        formdata = {
-            'keywords': self.query,
-            'c[title_only]': self.title_only,
-            'c[newer_than]': self.newer_than,
-            'c[older_than]': self.older_than,
-            'c[min_reply_count]': self.min_reply,
-            'c[nodes][]':self.config['KAUPPALEHTI_FORUM_SECTIONS'][self.forum_section],
-            'c[child_nodes]':self.subsections,
-            'order': self.sort,
-            'grouped': '1',
-            '_xfToken' : _xfToken,
-        }
-        yield FormRequest(
-            url='https://keskustelu.kauppalehti.fi/search/search',
-            formdata=formdata,
-            method='POST',
-            callback=self.parse_threads
-        )
+        for section_value in self.config['KAUPPALEHTI_FORUM_SECTIONS'].values():
+            formdata = {
+                'keywords': self.query,
+                'c[title_only]': '0',
+                'c[newer_than]': self.settings["TIMEFROM"],
+                'c[older_than]': self.settings["TIMETO"],
+                'c[min_reply_count]': '0',
+                'c[nodes][]': section_value,
+                'c[child_nodes]': '1',
+                'order': 'date',
+                'grouped': '1',
+                '_xfToken': _xfToken,
+            }
+            yield FormRequest(
+                url='https://keskustelu.kauppalehti.fi/search/search',
+                formdata=formdata,
+                method='POST',
+                callback=self.parse_threads
+            )
 
 
     def parse_threads(self, response):
@@ -62,7 +56,7 @@ class KauppalehtiSpider(scrapy.Spider):
             thread_name = ' '.join([text.strip() for text in thread_name if text.strip()]),
             yield scrapy.Request(url, callback=self.scrape_thread, meta={'thread': thread_name})
 
-        self.parse_threads_next_page(response)
+        yield from self.parse_threads_next_page(response)
 
 
 
