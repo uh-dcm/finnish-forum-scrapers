@@ -58,6 +58,7 @@ class Backend(QObject):
             'TIMETO': endDate,
             'ITEM_PIPELINES': {
                 'uh_scrapy.pipelines.TimestampFilterPipeline': 1,
+                'uh_scrapy.pipelines.BodyFilterPipeline': 2,
             },
         }
 

@@ -47,28 +47,40 @@ class HevostalliSpider(scrapy.Spider):
 
 
     def scrape_thread(self, response):
-        i = 0
-        ids= response.xpath(".//a/@name").getall()
-        for comment in response.xpath("//td[@class='postbodywrap']"):
+        thread = response.xpath("//td[@class='postsubject']/span[@class='PhorumTableHeader']/text()").get()
+        if thread:
+            thread = thread.strip()
+        ids = response.xpath(".//a/@name").getall()
+        for i, comment in enumerate(response.xpath("//td[@class='postbodywrap']")):
             post = PostItem()
+            post["thread"] = thread
 
-            post["thread"] = response.xpath("//td[@class='postsubject']/span[@class='PhorumTableHeader']/text()").get().strip()
+            texts = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()
 
-            post["author"] = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()[1][1:].strip()
-            
-            body = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()[3:]
+            if len(texts) > 1:
+                author_text = texts[1]
+                post["author"] = author_text.split('\xa0')[-1].strip() if '\xa0' in author_text else author_text.strip()
 
-            post["body"] = ' '.join([text.strip() for text in body if text.strip()])
-            
-            post["id"] = ids[i][6:]
-            i+=1
+            if len(texts) > 3:
+                body = texts[3:]
+                post["body"] = ' '.join([t.strip() for t in body if t.strip()])
 
-            pre_time = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()[2].strip()[11:].strip()
-            parsed_date = datetime.strptime(pre_time, "%d.%m.%y %H:%M:%S")
-            iso_date = parsed_date.strftime("%Y-%m-%dT%H:%M:%S")
-            post["timestamp"] = iso_date
+            if i < len(ids) and ids[i] and len(ids[i]) > 6:
+                post["id"] = ids[i][6:]
 
-            yield post
+            if len(texts) > 2:
+                date_text = texts[2].strip()
+                paiva = date_text.split('\xa0')[-1].strip() if '\xa0' in date_text else date_text
+                if len(paiva) > 10:
+                    paiva = paiva[-17:].strip()
+                try:
+                    parsed_date = datetime.strptime(paiva, "%d.%m.%y %H:%M:%S")
+                    post["timestamp"] = parsed_date.strftime("%Y-%m-%dT%H:%M:%S")
+                except (ValueError, IndexError):
+                    pass
+
+            if post.get("timestamp"):
+                yield post
 
 
 

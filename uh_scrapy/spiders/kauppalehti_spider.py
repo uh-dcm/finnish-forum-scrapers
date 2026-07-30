@@ -25,25 +25,22 @@ class KauppalehtiSpider(scrapy.Spider):
         if not _xfToken:
             self.logger.error("Could not retrieve _xfToken")
             return
-        for section_value in self.config['KAUPPALEHTI_FORUM_SECTIONS'].values():
-            formdata = {
-                'keywords': self.query,
-                'c[title_only]': '0',
-                'c[newer_than]': self.settings["TIMEFROM"],
-                'c[older_than]': self.settings["TIMETO"],
-                'c[min_reply_count]': '0',
-                'c[nodes][]': section_value,
-                'c[child_nodes]': '1',
-                'order': 'date',
-                'grouped': '1',
-                '_xfToken': _xfToken,
-            }
-            yield FormRequest(
-                url='https://keskustelu.kauppalehti.fi/search/search',
-                formdata=formdata,
-                method='POST',
-                callback=self.parse_threads
-            )
+        formdata = {
+            'keywords': self.query,
+            'c[title_only]': '0',
+            'c[newer_than]': self.settings["TIMEFROM"],
+            'c[older_than]': self.settings["TIMETO"],
+            'c[min_reply_count]': '0',
+            'order': 'date',
+            'grouped': '1',
+            '_xfToken': _xfToken,
+        }
+        yield FormRequest(
+            url='https://keskustelu.kauppalehti.fi/search/search',
+            formdata=formdata,
+            method='POST',
+            callback=self.parse_threads
+        )
 
 
     def parse_threads(self, response):

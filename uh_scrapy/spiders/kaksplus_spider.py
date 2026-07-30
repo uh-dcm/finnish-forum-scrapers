@@ -36,24 +36,21 @@ class KaksplusSpider(scrapy.Spider):
         self.query = self.settings["QUERY"].replace(" ", "%20")
 
         _xfToken = response.css('input[name="_xfToken"]::attr(value)').get()
-        for section_value in self.config['KAKSPLUS_FORUM_SECTIONS'].values():
-            formdata = {
-                "keywords": self.query,
-                "c[title_only]": '0',
-                "c[newer_than]": self.settings["TIMEFROM"],
-                "c[min_reply_count]": '0',
-                "c[nodes][]": section_value,
-                "c[child_nodes]": '1',
-                "order": 'date',
-                "grouped": '1',
-                "_xfToken": _xfToken,
-            }
-            yield FormRequest(
-                url='https://keskustelu.kaksplus.fi/keskustelu/haku/search',
-                formdata=formdata,
-                method='POST',
-                callback=self.parse_threads
-            )
+        formdata = {
+            "keywords": self.query,
+            "c[title_only]": '0',
+            "c[newer_than]": self.settings["TIMEFROM"],
+            "c[min_reply_count]": '0',
+            "order": 'date',
+            "grouped": '1',
+            "_xfToken": _xfToken,
+        }
+        yield FormRequest(
+            url='https://keskustelu.kaksplus.fi/keskustelu/haku/search',
+            formdata=formdata,
+            method='POST',
+            callback=self.parse_threads
+        )
 
     def parse_threads(self, response):
         links = response.xpath('//h3[@class="contentRow-title"]/a/@href').getall()
@@ -76,7 +73,7 @@ class KaksplusSpider(scrapy.Spider):
         
         for comment in response.xpath('//article[contains(@class, "message--post")]'):
             post = PostItem()
-            body = comment.xpath('.//div[@class="bbWrapper"]/text()').getall()
+            body = comment.xpath('.//div[@class="bbWrapper"]//text()').getall()
             post['id'] = comment.xpath('./@id').get()[8:]
             post['author'] = comment.xpath('./@data-author').get()
             post['thread'] = thread

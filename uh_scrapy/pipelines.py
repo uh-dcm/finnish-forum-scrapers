@@ -35,17 +35,21 @@ class TimestampFilterPipeline:
         adapter = ItemAdapter(item)
         iso_date = adapter['timestamp']
 
-
         try:
-            parsed_date = datetime.datetime.strptime(iso_date, "%Y-%m-%dT%H:%M:%S")
+            parsed_date = datetime.datetime.fromisoformat(iso_date)
         except ValueError:
-            raise DropItem(f"Invalid timestamp format: {iso_date}")
+            try:
+                parsed_date = datetime.datetime.strptime(iso_date, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                raise DropItem(f"Invalid timestamp format: {iso_date}")
 
+        if parsed_date.tzinfo is not None:
+            parsed_date = parsed_date.replace(tzinfo=None)
 
         if self.start_date <= parsed_date <= self.end_date:
-            return item  # Keep the item
+            return item
         else:
-            raise DropItem(f"Item does not pass the filter")
+            raise DropItem(f"Item does not pass the filter(Timestamp filter)")
         
 class BodyFilterPipeline:
     def __init__(self,  query):
@@ -67,5 +71,5 @@ class BodyFilterPipeline:
         if self.query in body:
             return item  # Keep the item
         else:
-            raise DropItem(f"Item does not pass the filter")
+            raise DropItem(f"Item does not pass the filter(Body filter)")
 
