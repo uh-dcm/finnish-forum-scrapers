@@ -8,12 +8,18 @@ import configparser
 from ..items import PostItem
 
 class KauppalehtiSpider(scrapy.Spider):
+    """Scraper for the Kauppalehti.fi discussion forum.
+
+    Submits a XenForo search form using the configured query and time
+    window, follows the matching threads and extracts every post.
+    """
 
     name = "kauppalehti"
     start_urls = ['https://keskustelu.kauppalehti.fi/search/']
 
     def __init__(self, *args, **kwargs):
         super(KauppalehtiSpider, self).__init__(*args, **kwargs)
+        # Load the forum sections from config.ini.
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
 
@@ -21,6 +27,7 @@ class KauppalehtiSpider(scrapy.Spider):
     def parse(self, response):
         self.query = self.settings["QUERY"].replace(" ", "%20")
 
+        # XenForo search is a POST request; grab the CSRF token first.
         _xfToken = response.css("input[name='_xfToken']::attr(value)").get()
         if not _xfToken:
             self.logger.error("Could not retrieve _xfToken")
@@ -45,10 +52,12 @@ class KauppalehtiSpider(scrapy.Spider):
 
     def parse_threads(self, response):
         print("Parsing threads now")
+        # Follow every thread link found in the search results.
         threads = response.xpath("//li[contains(@class, 'block-row--separated')]")
         for thread in threads:
             link = thread.xpath(".//h3[@class='contentRow-title']/a/@href").get()
             url = response.urljoin(link)
+            # Pass the thread title along as metadata to the thread page.
             thread_name = thread.xpath(".//h3[@class='contentRow-title']/a/text()").getall()
             thread_name = ' '.join([text.strip() for text in thread_name if text.strip()]),
             yield scrapy.Request(url, callback=self.scrape_thread, meta={'thread': thread_name})
@@ -58,6 +67,7 @@ class KauppalehtiSpider(scrapy.Spider):
 
 
     def parse_threads_next_page(self, response):
+        # Follow the "next page" pagination link, if present.
         next_page = response.xpath("//a[contains(@class, 'pageNav-jump--next')]/@href").get()
         if next_page is not None:
             next_page = response.urljoin(next_page)
@@ -65,12 +75,15 @@ class KauppalehtiSpider(scrapy.Spider):
 
 
     def scrape_thread(self, response):
+        # Grab the thread title from the page heading.
         thread = response.xpath("//div[@class='p-title ']/h1/text()").get()
+        # Extract each individual post from the thread page.
         for comment in response.xpath("//div[@class='message-inner']"):
             post = PostItem()
             body = comment.xpath(".//article[@class='message-body js-selectToQuote']//div[@class='bbWrapper']//text()").getall()
             post["thread"] = thread
             post["author"] = comment.xpath(".//h4[@class='message-name']/a//text()").get()
+            # Strip whitespace from each text fragment before joining.
             post["body"] = ' '.join([text.strip() for text in body if text.strip()])
             post["id"] = comment.xpath(".//a[contains(@class, 'message-attribution-gadget')]/@data-href").re_first(r'/posts/(\d+)/')
             post['timestamp'] = comment.xpath(".//time[@class='u-dt']/@datetime").get()
@@ -79,6 +92,7 @@ class KauppalehtiSpider(scrapy.Spider):
 
     #check if the next page exists
     def scrape_thread_next_page(self, response):
+        # Follow the pagination link to the next page of posts.
         next_page = response.xpath("//a[contains(@class, 'pageNav-jump--next')]/@href").get()
         if next_page is not None:
             next_page = response.urljoin(next_page)
