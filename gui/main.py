@@ -6,11 +6,9 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Signal, Slot, QSettings, QUrl
 
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
-
 import pkgutil
 import inspect
+import subprocess
 import threading
 
 import uh_scrapy.spiders as spiders_pkg
@@ -45,34 +43,40 @@ def load_spider_classes():
 
 spiders = load_spider_classes()
 
-def start_spider( process ):
-    process.start(install_signal_handlers=False)
-
 class Backend(QObject):
+    collectionStarted = Signal()
+    collectionFinished = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._process = None
+
     @Slot('QVariantList',str,str,str, str)
     def on_spider_start(self, forums, search, startDate, endDate, file ):
+        # Guard against starting a collection while another is already running.
+        if self._process is not None or not forums:
+            return
 
-        custom = {
-            'QUERY' : search,
-            'TIMEFROM': startDate,
-            'TIMETO': endDate,
-            'ITEM_PIPELINES': {
-                'uh_scrapy.pipelines.TimestampFilterPipeline': 1,
-                'uh_scrapy.pipelines.BodyFilterPipeline': 2,
-            },
-        }
+        script = Path(__file__).resolve().parent / "run_collection.py"
+        cmd = [
+            sys.executable,
+            str(script),
+            *(spiders[forum].name for forum in forums),
+            "--query", search,
+            "--timefrom", startDate,
+            "--timeto", endDate,
+            "--file", file,
+        ]
 
-        settings = get_project_settings()
-        settings.update(custom)
-        
-        ## start spiders
-        for forum in forums:
-            spider = spiders[ forum ]
-            settings['FEEDS'] = { file : {'format': 'csv', 'overwrite': False} }
-            process = CrawlerProcess(settings)
-            process.crawl( spider.name )
-            t = threading.Thread(target=start_spider, args=[process] )
-            t.start()
+        self._process = subprocess.Popen(cmd)
+        self.collectionStarted.emit()
+
+        def wait():
+            self._process.wait()
+            self._process = None
+            self.collectionFinished.emit()
+
+        threading.Thread(target=wait, daemon=True).start()
 
 if __name__ == "__main__":
 

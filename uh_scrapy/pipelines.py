@@ -11,7 +11,7 @@ from scrapy.exceptions import DropItem
 
 
 class uh_scrapyPipeline:
-    def process_item(self, item, spider):
+    def process_item(self, item):
         return item
 
 class TimestampFilterPipeline:
@@ -31,7 +31,7 @@ class TimestampFilterPipeline:
 
         return cls(start_date, end_date)
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         adapter = ItemAdapter(item)
         iso_date = adapter['timestamp']
 
@@ -62,7 +62,7 @@ class BodyFilterPipeline:
 
         return cls(query)
 
-    def process_item(self, item, spider):
+    def process_item(self, item):
         
         adapter = ItemAdapter(item)
         body = adapter['body']
