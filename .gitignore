@@ -33,6 +33,9 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# Keep the PyInstaller specs used by the CI build tracked in git.
+!Finnish-Forum-Scraper.spec
+!Finnish-Forum-Scraper-onefile.spec
 
 # Installer logs
 pip-log.txt

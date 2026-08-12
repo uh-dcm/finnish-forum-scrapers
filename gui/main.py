@@ -1,29 +1,52 @@
 # This Python file uses the following encoding: utf-8
 import sys
-from pathlib import Path
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Signal, Slot, QSettings, QUrl
+from PySide6.QtCore import QObject, Signal, Slot, QUrl
 
 import pkgutil
 import inspect
-import subprocess
 import threading
+import importlib
 
 import uh_scrapy.spiders as spiders_pkg
 from scrapy import Spider
 
+# `resources` lives in the gui package. Use a fallback so the app can run as a
+# script (gui/ on sys.path), as a module (python -m gui.main), or frozen.
+try:
+    from resources import resource_path
+except ImportError:
+    from .resources import resource_path
+
+# Explicit list of the spider modules that ship with the application. Declared
+# here (and as PyInstaller hidden imports) because pkgutil.iter_modules cannot
+# discover dynamically imported modules inside a frozen executable.
+SPIDER_MODULES = [
+    "kauppalehti_spider",
+    "test_spider",
+    "yle_spider",
+    "hevostalli_spider",
+    "hs_spider",
+    "vauva_spider",
+    "kaksplus_spider",
+]
+
 def load_spider_classes():
     spider_classes = {}
 
-    # Iterate over all modules in the spiders/ directory
-    for module_info in pkgutil.iter_modules(spiders_pkg.__path__):
-        module_name = module_info.name
+    # When frozen, iterate the known module names; otherwise auto-discover.
+    if getattr(sys, "frozen", False):
+        module_names = SPIDER_MODULES
+    else:
+        module_names = [m.name for m in pkgutil.iter_modules(spiders_pkg.__path__)]
+
+    for module_name in module_names:
         full_name = f"{spiders_pkg.__name__}.{module_name}"
 
         # Dynamically import module
-        module = __import__(full_name, fromlist=[''])
+        module = importlib.import_module(full_name)
 
         # Extract classes defined in this module
         for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -57,26 +80,29 @@ class Backend(QObject):
         if self._process is not None or not forums:
             return
 
-        script = Path(__file__).resolve().parent / "run_collection.py"
-        cmd = [
-            sys.executable,
-            str(script),
-            *(spiders[forum].name for forum in forums),
-            "--query", search,
-            "--timefrom", startDate,
-            "--timeto", endDate,
-            "--file", file,
-        ]
+        try:
+            from run_collection import run_spiders
+        except ImportError:
+            from .run_collection import run_spiders
 
-        self._process = subprocess.Popen(cmd)
-        self.collectionStarted.emit()
+        spider_names = [spiders[forum].name for forum in forums]
 
-        def wait():
-            self._process.wait()
+        def run():
+            try:
+                run_spiders(spider_names, search, startDate, endDate, file)
+            finally:
+                self._process = None
+                self.collectionFinished.emit()
+
+        try:
+            self._process = threading.Thread(target=run, daemon=True)
+            self._process.start()
+        except Exception as e:
+            print("Failed to start collection:", e)
             self._process = None
-            self.collectionFinished.emit()
+            return
 
-        threading.Thread(target=wait, daemon=True).start()
+        self.collectionStarted.emit()
 
 if __name__ == "__main__":
 
@@ -90,8 +116,8 @@ if __name__ == "__main__":
     engine.rootContext().setContextProperty("spiders", list(spiders.keys()) )
     engine.rootContext().setContextProperty("backend", backend)
 
-    qml_file = Path(__file__).resolve().parent / "main.qml"
-    engine.load(qml_file)
+    qml_file = resource_path("main.qml")
+    engine.load(QUrl.fromLocalFile(str(qml_file)))
 
     if not engine.rootObjects():
         sys.exit(-1)
