@@ -13,24 +13,23 @@ import importlib
 import uh_scrapy.spiders as spiders_pkg
 from scrapy import Spider
 
-# `resources` lives in the gui package. Use a fallback so the app can run as a
-# script (gui/ on sys.path), as a module (python -m gui.main), or frozen.
+# Why it works lol
 try:
     from resources import resource_path
 except ImportError:
     from .resources import resource_path
 
-# Explicit list of the spider modules that ship with the application. Declared
-# here (and as PyInstaller hidden imports) because pkgutil.iter_modules cannot
-# discover dynamically imported modules inside a frozen executable.
+# PyInstaller is a big mess and doesn't handle dynamic imports well. We need to explicitly
+# import all spider modules so they are included in the frozen app. This is done in the spec file, 
+# but we also need to import them here so we can access their classes.
 SPIDER_MODULES = [
-    "kauppalehti_spider",
-    "test_spider",
-    "yle_spider",
     "hevostalli_spider",
     "hs_spider",
-    "vauva_spider",
+    "kauppalehti_spider",
     "kaksplus_spider",
+    "vauva_spider",
+    "yle_spider",
+    "test_spider",
 ]
 
 def load_spider_classes():
