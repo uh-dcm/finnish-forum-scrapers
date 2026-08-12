@@ -32,6 +32,7 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.margins: 10
         spacing: 10
+        enabled: !loadingOverlay.visible
 
         ListView {
             model: ListModel { id: forumsModel }
