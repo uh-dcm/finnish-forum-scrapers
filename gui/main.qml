@@ -154,7 +154,7 @@ ApplicationWindow {
         Rectangle {
             anchors.centerIn: parent
             width: 240
-            height: 120
+            height: 180
             radius: 8
             color: "white"
             border.color: "#cccccc"
@@ -173,6 +173,18 @@ ApplicationWindow {
                     text: "Collecting data..."
                     anchors.horizontalCenter: parent.horizontalCenter
                     font.pixelSize: 14
+                }
+
+                Button {
+                    text: "Stop collection"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    onClicked: backend.on_spider_stop()
+                    background: Rectangle {
+                        implicitWidth: 140
+                        implicitHeight: 36
+                        radius: 4
+                        color: parent.down ? "#b71c1c" : (parent.hovered ? "#e53935" : "#f44336")
+                    }
                 }
             }
         }

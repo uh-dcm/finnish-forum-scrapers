@@ -2,6 +2,8 @@
 import argparse
 import os
 import sys
+import threading
+import time
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.settings import Settings
@@ -33,9 +35,7 @@ def _make_settings(query, timefrom, timeto, file):
     return settings
 
 
-def run_spiders(spider_names, query, timefrom, timeto, file):
-    """Run the selected spiders to completion. Safe to call from a background
-    thread. Works both from source and from a PyInstaller-frozen executable."""
+def run_spiders(spider_names, query, timefrom, timeto, file, stop_event=None):
     # Spiders read 'config.ini' relative to the working directory and import
     # the bundled 'constants' module, so pivot to the bundle root first.
     root = project_root()
@@ -49,6 +49,26 @@ def run_spiders(spider_names, query, timefrom, timeto, file):
     process = CrawlerProcess(settings)
     for name in spider_names:
         process.crawl(name)
+
+    if stop_event is not None:
+        # A watcher thread waits for the stop request and schedules
+        # process.stop() on the Twisted reactor thread running the crawl.
+        from twisted.internet import reactor
+
+        def watch():
+            stop_event.wait()
+            # Retry until the reactor is up, to avoid racing with
+            # process.start() starting the reactor.
+            while True:
+                try:
+                    reactor.callFromThread(process.stop)
+                except Exception:
+                    time.sleep(0.1)
+                    continue
+                break
+
+        threading.Thread(target=watch, daemon=True).start()
+
     process.start(install_signal_handlers=False)
 
 

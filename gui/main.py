@@ -72,6 +72,7 @@ class Backend(QObject):
     def __init__(self):
         super().__init__()
         self._process = None
+        self._stop_event = None
 
     @Slot('QVariantList',str,str,str, str)
     def on_spider_start(self, forums, search, startDate, endDate, file ):
@@ -85,12 +86,14 @@ class Backend(QObject):
             from .run_collection import run_spiders
 
         spider_names = [spiders[forum].name for forum in forums]
+        self._stop_event = threading.Event()
 
         def run():
             try:
-                run_spiders(spider_names, search, startDate, endDate, file)
+                run_spiders(spider_names, search, startDate, endDate, file, self._stop_event)
             finally:
                 self._process = None
+                self._stop_event = None
                 self.collectionFinished.emit()
 
         try:
@@ -99,9 +102,16 @@ class Backend(QObject):
         except Exception as e:
             print("Failed to start collection:", e)
             self._process = None
+            self._stop_event = None
             return
 
         self.collectionStarted.emit()
+
+    @Slot()
+    def on_spider_stop(self):
+        # Request a graceful stop of the running collection, if any.
+        if self._stop_event is not None:
+            self._stop_event.set()
 
 if __name__ == "__main__":
 
