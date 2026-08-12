@@ -37,11 +37,18 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean Finnish-Forum-Scraper-onefile.spec
 
-      - name: Create or update GitHub release
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FinnishForumScraper
+          path: dist/FinnishForumScraper.exe
+
+      - name: Create GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ci-${{ github.run_id }}
-          name: Finnish Forum Scraper ci-${{ github.run_id }}
+          tag_name: v1.0.${{ github.run_number }}
+          name: Finnish Forum Scraper v1.0.${{ github.run_number }}
           files: |
             dist/FinnishForumScraper.exe
           generate_release_notes: true
