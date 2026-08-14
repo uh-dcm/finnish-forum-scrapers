@@ -3,15 +3,23 @@ import argparse
 import os
 import sys
 import threading
-import time
 
-from scrapy.crawler import CrawlerProcess
+from scrapy.crawler import CrawlerRunner
 from scrapy.settings import Settings
+from scrapy.utils.log import configure_logging, log_scrapy_info
+from twisted.internet.defer import DeferredList
 
 try:
     from resources import project_root
 except ImportError:
     from .resources import project_root
+
+# Multithreading is weird but is needed here.
+# The reactor runs on the main thread and the spiders run on a background thread.
+_reactor_lock = threading.Lock()
+_reactor_thread = None
+_reactor_ready = threading.Event()
+_logging_configured = False
 
 
 def _make_settings(query, timefrom, timeto, file):
@@ -35,6 +43,33 @@ def _make_settings(query, timefrom, timeto, file):
     return settings
 
 
+def _ensure_reactor(settings):
+    global _reactor_thread
+    with _reactor_lock:
+        if _reactor_thread is not None:
+            return
+
+        from scrapy.utils.reactor import install_reactor
+
+        def bootstrap():
+            global _logging_configured
+            if not _logging_configured:
+                configure_logging(settings)
+                log_scrapy_info(settings)
+                _logging_configured = True
+            install_reactor(
+                settings["TWISTED_REACTOR"], settings.get("ASYNCIO_EVENT_LOOP")
+            )
+
+            from twisted.internet import reactor
+            _reactor_ready.set()
+            reactor.run(installSignalHandlers=False)
+
+        _reactor_thread = threading.Thread(target=bootstrap, daemon=True)
+        _reactor_thread.start()
+        _reactor_ready.wait()
+
+
 def run_spiders(spider_names, query, timefrom, timeto, file, stop_event=None):
     # Spiders read 'config.ini' relative to the working directory and import
     # the bundled 'constants' module, so pivot to the bundle root first.
@@ -45,31 +80,43 @@ def run_spiders(spider_names, query, timefrom, timeto, file, stop_event=None):
         pass
 
     settings = _make_settings(query, timefrom, timeto, file)
+    _ensure_reactor(settings)
 
-    process = CrawlerProcess(settings)
-    for name in spider_names:
-        process.crawl(name)
+    from twisted.internet import reactor
+
+    runner = CrawlerRunner(settings)
+    done = threading.Event()
+    errors = []
+
+    def on_crawls_done(result):
+        for ok, res in result:
+            if not ok:
+                errors.append(res)
+        done.set()
+
+    def schedule():
+        if stop_event is not None and stop_event.is_set():
+            done.set()
+            return
+        deferreds = []
+        for name in spider_names:
+            deferreds.append(runner.crawl(name))
+        DeferredList(deferreds, consumeErrors=True).addBoth(on_crawls_done)
+
+    reactor.callFromThread(schedule)
 
     if stop_event is not None:
-        # A watcher thread waits for the stop request and schedules
-        # process.stop() on the Twisted reactor thread running the crawl.
-        from twisted.internet import reactor
-
         def watch():
             stop_event.wait()
-            # Retry until the reactor is up, to avoid racing with
-            # process.start() starting the reactor.
-            while True:
-                try:
-                    reactor.callFromThread(process.stop)
-                except Exception:
-                    time.sleep(0.1)
-                    continue
-                break
+            reactor.callFromThread(
+                lambda: runner.stop().addBoth(lambda _: done.set())
+            )
 
         threading.Thread(target=watch, daemon=True).start()
 
-    process.start(install_signal_handlers=False)
+    done.wait()
+    if errors:
+        raise errors[0].value
 
 
 def main():
