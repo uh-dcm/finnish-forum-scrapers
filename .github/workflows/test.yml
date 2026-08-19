@@ -16,10 +16,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.13.0' 
 
@@ -28,13 +28,15 @@ jobs:
         python -m venv venv  # Create virtual environment
         source venv/bin/activate  # Activate virtual environment
         python -m pip install --upgrade pip  # Upgrade pip
-        pip install -r requirements.txt  # Install dependencies from requirements.txt
+        # requirements.txt is UTF-16 encoded; normalize to UTF-8 first.
+        iconv -f UTF-16 -t UTF-8 requirements.txt > requirements-utf8.txt
+        pip install -r requirements-utf8.txt  # Install dependencies from requirements.txt
         pip install pytest
 
-    - name: Run Pytest and produce JUnit XML
+    - name: Run unit tests and print per-site report
       run: |
-          source venv/bin/activate
-          pytest --junitxml=test-results.xml
+        source venv/bin/activate
+        python run_tests.py
           
     - name: Upload test results artifact
       uses: actions/upload-artifact@v4

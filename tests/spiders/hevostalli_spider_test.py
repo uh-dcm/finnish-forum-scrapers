@@ -23,7 +23,6 @@ class HevostalliSpiderTest(unittest.TestCase):
                 permalinks.add(item['id'])
                 count += 1
         self.assertEqual(count, expected_length)
-        self.assertEqual(count, expected_length)
         self.assertEqual(len(permalinks), count)
 
     def test_scrape_thread(self):

@@ -5,7 +5,7 @@ import os
 
 from scrapy.http import HtmlResponse
 
-def mock_response_from_file(file_path, url, base_dir=None):
+def mock_response_from_file(file_path, url, base_dir=None, meta=None):
     """
     Create a Scrapy fake HTTP response from a HTML file
 
@@ -13,6 +13,9 @@ def mock_response_from_file(file_path, url, base_dir=None):
                       but absolute paths are also accepted.
     @param url: The URL of the response.
     @param base_dir: The base directory to use for relative paths. Defaults to the current working directory.
+    @param meta: Optional metadata to attach to the response request. Some
+                 spiders read values from response.meta, so the response has
+                 to be tied to a request that carries that metadata.
 
     returns: A scrapy HTTP response which can be used for unittesting.
     """
@@ -28,7 +31,9 @@ def mock_response_from_file(file_path, url, base_dir=None):
 
     with open(file_path, 'r', encoding='utf-8') as f:
         body = f.read()
-    return HtmlResponse(url=url, body=body, encoding='utf-8')
+
+    request = Request(url, meta=meta) if meta is not None else None
+    return HtmlResponse(url=url, body=body, encoding='utf-8', request=request)
 
 def mock_response(url):
     """
@@ -41,5 +46,5 @@ def mock_response(url):
     request = Request(url)
     response = Response(url=url,
         request=request,
-        body=requests.get(url))
+        body=requests.get(url).content)
     return response

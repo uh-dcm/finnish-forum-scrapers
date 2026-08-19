@@ -27,7 +27,9 @@ class YleSpiderTest(unittest.TestCase):
         self._test_item_results(results, 23)
 
     def test_parse_threads(self):
-        threads = list(self.spider.parse_threads(mock_response_from_file('tests/assets/yle_mock_threads.html', 'https://yle-fi-search.api.yle.fi/v1/search?app_id=hakuylefi_v2_prod&app_key=4c1422b466ee676e03c4ba9866c0921f&language=fi&limit=10&offset=0&query=peruna&type=article')))
+        url = 'https://yle-fi-search.api.yle.fi/v1/search?app_id=hakuylefi_v2_prod&app_key=4c1422b466ee676e03c4ba9866c0921f&language=fi&limit=10&offset=0&query=peruna&type=article'
+        meta = {'search': ['query=peruna', 'language=fi'], 'offset': 0}
+        threads = list(self.spider.parse_threads(mock_response_from_file('tests/assets/yle_mock_threads.html', url, meta=meta)))
         self.assertEqual(len(threads), 11)
 
 
