@@ -65,6 +65,20 @@ ApplicationWindow {
 
         Row {
             spacing: 10
+
+            Label {
+                text: "Use lemmatization"
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Switch {
+                id: lemmatizationSwitch
+                checked: true
+            }
+        }
+
+        Row {
+            spacing: 10
             
             Label { text: "Start Date:" }
             TextField {
@@ -131,7 +145,7 @@ ApplicationWindow {
 
             onAccepted: {
                 console.log("Chosen save path:", selectedFile)
-                backend.on_spider_start(collectSelected(), search.text, startDate.text, endDate.text, saveDialog.selectedFile )
+                backend.on_spider_start(collectSelected(), search.text, startDate.text, endDate.text, saveDialog.selectedFile, lemmatizationSwitch.checked )
             }
         }
 

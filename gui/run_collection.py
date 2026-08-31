@@ -22,7 +22,7 @@ _reactor_ready = threading.Event()
 _logging_configured = False
 
 
-def _make_settings(query, timefrom, timeto, file):
+def _make_settings(query, timefrom, timeto, file, use_lemmatization=True):
     # Load the project settings directly from the module instead of relying on
     # get_project_settings(), which reads scrapy.cfg from disk and is not
     # available inside a PyInstaller-frozen executable.
@@ -35,6 +35,7 @@ def _make_settings(query, timefrom, timeto, file):
     settings.set('QUERY', query)
     settings.set('TIMEFROM', timefrom)
     settings.set('TIMETO', timeto)
+    settings.set('USE_LEMMATIZATION', use_lemmatization)
     settings.set('ITEM_PIPELINES', {
         'uh_scrapy.pipelines.TimestampFilterPipeline': 1,
         'uh_scrapy.pipelines.BodyFilterPipeline': 2,
@@ -70,7 +71,7 @@ def _ensure_reactor(settings):
         _reactor_ready.wait()
 
 
-def run_spiders(spider_names, query, timefrom, timeto, file, stop_event=None):
+def run_spiders(spider_names, query, timefrom, timeto, file, stop_event=None, use_lemmatization=True):
     # Spiders read 'config.ini' relative to the working directory and import
     # the bundled 'constants' module, so pivot to the bundle root first.
     root = project_root()
@@ -79,7 +80,7 @@ def run_spiders(spider_names, query, timefrom, timeto, file, stop_event=None):
     except OSError:
         pass
 
-    settings = _make_settings(query, timefrom, timeto, file)
+    settings = _make_settings(query, timefrom, timeto, file, use_lemmatization)
     _ensure_reactor(settings)
 
     from twisted.internet import reactor

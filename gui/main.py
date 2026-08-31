@@ -74,8 +74,8 @@ class Backend(QObject):
         self._process = None
         self._stop_event = None
 
-    @Slot('QVariantList',str,str,str, str)
-    def on_spider_start(self, forums, search, startDate, endDate, file ):
+    @Slot('QVariantList',str,str,str, str, bool)
+    def on_spider_start(self, forums, search, startDate, endDate, file, use_lemmatization=True):
         # Guard against starting a collection while another is already running.
         if self._process is not None or not forums:
             return
@@ -90,7 +90,7 @@ class Backend(QObject):
 
         def run():
             try:
-                run_spiders(spider_names, search, startDate, endDate, file, self._stop_event)
+                run_spiders(spider_names, search, startDate, endDate, file, self._stop_event, use_lemmatization)
             finally:
                 self._process = None
                 self._stop_event = None

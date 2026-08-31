@@ -9,6 +9,8 @@ from itemadapter import ItemAdapter
 import datetime
 from scrapy.exceptions import DropItem
 
+from uh_scrapy.text_utils import matches, simple_matches
+
 
 class uh_scrapyPipeline:
     def process_item(self, item):
@@ -52,23 +54,29 @@ class TimestampFilterPipeline:
             raise DropItem(f"Item does not pass the filter(Timestamp filter)")
         
 class BodyFilterPipeline:
-    def __init__(self,  query):
+    def __init__(self,  query, use_lemmatization=True):
         self.query = query
+        self.use_lemmatization = use_lemmatization
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
 
         query = crawler.settings.get('QUERY')
+        use_lemmatization = crawler.settings.getbool('USE_LEMMATIZATION', True)
 
-        return cls(query)
+        return cls(query, use_lemmatization)
 
     def process_item(self, item):
         
         adapter = ItemAdapter(item)
         body = adapter['body']
 
+        if self.use_lemmatization:
+            found = matches(self.query, body)
+        else:
+            found = simple_matches(self.query, body)
 
-        if self.query in body:
+        if found:
             return item  # Keep the item
         else:
             raise DropItem(f"Item does not pass the filter(Body filter)")

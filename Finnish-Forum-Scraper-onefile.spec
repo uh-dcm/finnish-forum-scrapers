@@ -32,6 +32,14 @@ metadata_datas = (
 # --- Scrapy pulls in a lot of dynamically imported dependencies. ------------
 scrapy_datas, scrapy_binaries, scrapy_hidden = collect_all('scrapy')
 
+# spacy + the Finnish model ship data (vocab, meta, numpy weights) and
+# metadata that must be bundled for the model to load from the frozen exe.
+spacy_datas, spacy_binaries, spacy_hidden = collect_all('spacy')
+try:
+    fi_datas, fi_binaries, fi_hidden = collect_all('fi_core_news_sm')
+except Exception:
+    fi_datas, fi_binaries, fi_hidden = [], [], []
+
 # Scrapy/Twisted stack loads many modules at runtime via entry points/plugins.
 heavy_deps = [
     'twisted', 'automat', 'hyperlink', 'incremental', 'zope',
@@ -71,6 +79,8 @@ spider_hidden = [
 hiddenimports = (
     pyside_hidden
     + scrapy_hidden
+    + spacy_hidden
+    + fi_hidden
     + heavy_hidden
     + spider_hidden
     + [
@@ -82,8 +92,8 @@ hiddenimports = (
     ]
 )
 
-datas = pyside_datas + scrapy_datas + heavy_datas + metadata_datas
-binaries = pyside_binaries + scrapy_binaries + heavy_binaries
+datas = pyside_datas + scrapy_datas + spacy_datas + fi_datas + heavy_datas + metadata_datas
+binaries = pyside_binaries + scrapy_binaries + spacy_binaries + fi_binaries + heavy_binaries
 
 # --- Bundle the QML files next to the entry point.---------------------------
 datas += [
