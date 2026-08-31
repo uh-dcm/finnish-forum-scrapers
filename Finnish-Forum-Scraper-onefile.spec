@@ -2,6 +2,7 @@
 # PyInstaller ONE-FILE spec for Finnish Forum Scraper GUI.
 #
 # Build with:
+#     python -m spacy download fi_core_news_sm
 #     pyinstaller --noconfirm --clean Finnish-Forum-Scraper-onefile.spec
 #
 # Produces a single self-contained executable:
