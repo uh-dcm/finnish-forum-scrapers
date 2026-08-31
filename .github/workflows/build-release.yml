@@ -32,6 +32,7 @@ jobs:
           pip install -r requirements-utf8.txt
           pip install -r gui/requirements.txt
           pip install pyinstaller
+          python -m spacy download fi_core_news_sm
 
       - name: Build EXE with PyInstaller
         shell: bash
