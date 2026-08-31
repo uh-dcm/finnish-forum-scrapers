@@ -28,8 +28,9 @@ class HSSpiderTest(unittest.TestCase):
         results = self.spider.scrape_thread(mock_response_from_file("tests/assets/hs_mock_thread.html", "https://www.hs.fi/api/commenting/hs/articles/2000010898802/comments"))
         self._test_item_results(results, 3)
 
-    def test_parse_threads(self):
-        threads = list(self.spider.parse_threads(mock_response_from_file("tests/assets/hs_mock_threads.html", 'https://www.hs.fi/api/search/peruna/kaikki/whenever/new/0/50/0/1765566540655/keyword/')))
-        self.assertEqual(len(threads), 51)
+    def test_parse_section(self):
+        requests = list(self.spider.parse_section(mock_response_from_file("tests/assets/hs_mock_threads.html", 'https://www.hs.fi/uutiset/')))
+        self.assertEqual(len(requests), 50)
+        self.assertEqual(requests[0].meta['article_id'], requests[0].url.split('/')[-2])
     
     

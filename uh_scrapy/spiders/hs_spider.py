@@ -1,18 +1,24 @@
+import re
 from datetime import datetime
 from typing import Iterable
 import scrapy
 from pathlib import Path
 import pandas as pd
-import constants
-import time
-from ..items import PostItem
 import configparser
+from ..items import PostItem
 
 
 class HSSpider(scrapy.Spider):
-    name= 'hs'
+    """Scraper for the Helsingin Sanomat (HS) comment section.
+
+    Walks every configured news category on hs.fi, collects the article
+    ids found on each section page and fetches the comments of each
+    article from the HS commenting JSON API.
+    """
+
+    name = 'hs'
     start_urls = ["https://www.hs.fi"]
-    
+
     def __init__(self, *args, **kwargs):
         super(HSSpider, self).__init__(*args, **kwargs)
         self.query = ''
@@ -21,105 +27,42 @@ class HSSpider(scrapy.Spider):
         self.timeto = ''
         self.sort = ''
 
-        self.count = 50
-        self.offset = 0
-        self.limit = 0
-        
+        # Load the available news categories from config.ini.
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
 
-    #convert date string to epoch time
-    def convert_to_epoch_ms(self, date_string):
-        # Back to date object
-        date_obj = datetime.strptime(date_string, '%Y-%m-%d')
-        
-        # Convert the datetime object to epoch time in seconds
-        epoch_time = int(time.mktime(date_obj.timetuple()))
-        
-        # Multiply by 1000 to get milliseconds
-        epoch_ms = epoch_time * 1000
-        return epoch_ms
-
-    #Function to turn the search parameters into a valid url 
-    def query_to_url(self, count, offset):
-        APIurl = f'https://www.hs.fi/api/search/{self.query}/{self.category}/custom/{self.sort}/{offset}/{count}/{self.timefrom}/{self.timeto}/keyword'
-        return APIurl  
-
-    #initial request
     def parse(self, response):
+        self.query = self.settings["QUERY"].lower()
+        self.timefrom = self.settings["TIMEFROM"]
+        self.timeto = self.settings["TIMETO"]
 
-        self.query = self.settings["QUERY"].replace(" ", "%20")
-        self.category = self.config["HS_CATEGORIES"][self.settings["HSCATEGORY"]]
-        self.timefrom = self.convert_to_epoch_ms(self.settings["TIMEFROM"])
-        self.timeto = self.convert_to_epoch_ms(self.settings["TIMETO"])
-        self.limit = int(self.settings["LIMIT"])
-        self.sort = self.config["HS_SORTING"][self.settings["SORTING"]]
-        
-        url = self.query_to_url(self.count, self.offset)
-        yield scrapy.Request(url, callback=self.parse_threads)
-    
- 
-    
-    # Function to collect thread ids
-    def parse_threads(self, response):
-        
-        data = response.json()
-        if data != []:
-            for id in [entry['id'] for entry in data]:
-                url = f"https://www.hs.fi/api/commenting/hs/articles/{id}/comments"
-                yield scrapy.Request(url, callback=self.scrape_thread)
-        
-        yield from self.parse_threads_next_page(response)
+        # Visit every category page defined in the config.
+        for cat_value in self.config["HS_CATEGORIES"].values():
+            url = f'https://www.hs.fi/{cat_value}/'
+            yield scrapy.Request(url, callback=self.parse_section, meta={'cat': cat_value})
 
-    def parse_threads_next_page(self, response):
-        if self.limit==0 or self.offset+self.count<self.limit:
-            self.offset = self.offset + self.count
-            APIurl = self.query_to_url(self.count, self.offset)
-            yield scrapy.Request(APIurl, callback=self.parse_threads)
+    def parse_section(self, response):
+        # Collect the unique article ids referenced on the category page.
+        article_ids = set()
+        for match in re.finditer(r'art-(\d+)\.html', response.text):
+            article_ids.add(match.group(1))
 
-    # Function to scrape comments from thread
+        # Fetch the comment list for each article from the JSON API.
+        for article_id in article_ids:
+            url = f"https://www.hs.fi/api/commenting/hs/articles/{article_id}/comments"
+            yield scrapy.Request(url, callback=self.scrape_thread, meta={'article_id': article_id})
+
     def scrape_thread(self, response):
+        # Parse the comment JSON and emit one PostItem per comment.
         data = response.json()
-        if data["totalComments"] != 0:
-            for comment in data['comments']:
-                post = PostItem()
-                post['id'] = comment["id"]
-                post["thread"] = comment["articleId"]
-                post["author"] = comment["userIdentity"]["displayName"]
-                post["body"] = comment["comment"]
-                post["timestamp"] = datetime.fromtimestamp(comment['createdAt'] / 1000).strftime("%Y-%m-%dT%H:%M:%S")
-                yield post
-
-
-    def scrape_next_thread(self, response):
-        pass
-
-    # Function to make an appropriate filename
-    def make_filename(self):
-        argstr = '_'.join(self.filename.values())
-        dt = datetime.now()
-        filename_date_string = dt.strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f'scrapedcontent/hs_{filename_date_string}_{argstr}.csv'
-        return filename
-
-    # Function to save scraped data to csv
-    def to_4cat_csv(self, comments, filename):
-        df = pd.DataFrame( comments )
-        newdf = pd.DataFrame()
-        newdf['body'] = df['comment']
-        newdf['author'] = df['userIdentity'].apply( lambda userIdentity: userIdentity['displayName'] )
-        newdf['timestamp'] = df['createdAt'].apply(  lambda date: datetime.fromtimestamp(  date/1000 ).strftime("%Y-%m-%d %H:%M:%S") )
-        newdf['id'] = df['id']
-        newdf['thread'] = df['articleId']
-        
-
-        newdf.to_csv(filename)
-    
-
-    # Make filename and save data after spider is done
-    def closed(self, reason):
-        pass
-        # name = self.make_filename()
-        # self.to_4cat_csv(self.comments, name)
-
-        
+        if data.get("totalComments", 0) == 0:
+            return
+        for comment in data['comments']:
+            post = PostItem()
+            post['id'] = comment["id"]
+            post["thread"] = comment["articleId"]
+            post["author"] = comment["userIdentity"]["displayName"]
+            post["body"] = comment["comment"]
+            # createdAt is a millisecond epoch timestamp; convert to the common format.
+            post["timestamp"] = datetime.fromtimestamp(comment['createdAt'] / 1000).strftime("%Y-%m-%dT%H:%M:%S")
+            yield post

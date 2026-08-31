@@ -16,10 +16,23 @@ ApplicationWindow {
     height: 1000
     title: "Finnish Forum Scraper"
 
+    function collectSelected() {
+        var selected = []
+        for (var i = 0; i < forumsModel.count; i++) {
+            var cb = forumsModel.get(i);
+            if (cb.checked){
+                selected.push(cb.text);
+            }
+        }
+        return selected
+    }
+
     Column {
+        id: form
         anchors.fill: parent
         anchors.margins: 10
         spacing: 10
+        enabled: !loadingOverlay.visible
 
         ListView {
             model: ListModel { id: forumsModel }
@@ -52,15 +65,79 @@ ApplicationWindow {
 
         Row {
             spacing: 10
-            
-            Label { text: "Start Date:" }
-            TextField { id: startDate; placeholderText: "YYYY-MM-DD" } // move to datepicker when possible
 
-            Label { text: "End Date:" }
-            TextField { id: endDate; placeholderText: "YYYY-MM-DD" }
+            Label {
+                text: "Use lemmatization"
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Switch {
+                id: lemmatizationSwitch
+                checked: true
+            }
         }
 
-         FileDialog {
+        Row {
+            spacing: 10
+            
+            Label { text: "Start Date:" }
+            TextField {
+                id: startDate
+                placeholderText: "YYYY-MM-DD"
+                readOnly: true
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: startDatePopup.open()
+                }
+            }
+
+            Label { text: "End Date:" }
+            TextField {
+                id: endDate
+                placeholderText: "YYYY-MM-DD"
+                readOnly: true
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: endDatePopup.open()
+                }
+            }
+        }
+
+        Popup {
+            id: startDatePopup
+            modal: true
+            x: (mainWindow.width - width) / 2
+            y: (mainWindow.height - height) / 2
+
+            DateCalendar {
+                selectedDate: (startDate.text !== "") ? Date.fromLocaleString(Qt.locale(), startDate.text, "yyyy-MM-dd") : new Date()
+                onClicked: function(date) {
+                    startDate.text = Qt.formatDate(date, "yyyy-MM-dd")
+                    startDatePopup.close()
+                }
+            }
+        }
+
+        Popup {
+            id: endDatePopup
+            modal: true
+            x: (mainWindow.width - width) / 2
+            y: (mainWindow.height - height) / 2
+
+            DateCalendar {
+                selectedDate: (endDate.text !== "") ? Date.fromLocaleString(Qt.locale(), endDate.text, "yyyy-MM-dd") : new Date()
+                onClicked: function(date) {
+                    endDate.text = Qt.formatDate(date, "yyyy-MM-dd")
+                    endDatePopup.close()
+                }
+            }
+        }
+
+        FileDialog {
             id: saveDialog
             title: "Save file as..."
             fileMode: FileDialog.SaveFile 
@@ -68,36 +145,78 @@ ApplicationWindow {
 
             onAccepted: {
                 console.log("Chosen save path:", selectedFile)
+                backend.on_spider_start(collectSelected(), search.text, startDate.text, endDate.text, saveDialog.selectedFile, lemmatizationSwitch.checked )
             }
         }
-
-        Button {
-            text: "Save As..."
-            onClicked: saveDialog.open()
-        }
-    
 
         Button {
             id: go
             text: "Start data collection"
-            
+
             Layout.fillWidth: true
 
-            onClicked: {
-                // move to python
+            onClicked: saveDialog.open()
+        }
+    }
 
-                var selected = []
-                for (var i = 0; i < forumsModel.count; i++) {
-                    var cb = forumsModel.get(i);
-                    if (cb.checked){
-                        selected.push(cb.text);
-                    }
+    Rectangle {
+        id: loadingOverlay
+        anchors.fill: parent
+        color: "#88777777"
+        z: 10
+        visible: false
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 240
+            height: 180
+            radius: 8
+            color: "white"
+            border.color: "#cccccc"
+            border.width: 1
+
+            Column {
+                anchors.centerIn: parent
+                spacing: 12
+
+                BusyIndicator {
+                    running: loadingOverlay.visible
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
 
-                backend.on_spider_start(selected,search.text,startDate.text,endDate.text, saveDialog.selectedFile )
+                Label {
+                    text: "Collecting data..."
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    font.pixelSize: 14
+                }
+
+                Button {
+                    text: "Stop collection"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    onClicked: backend.on_spider_stop()
+                    background: Rectangle {
+                        implicitWidth: 140
+                        implicitHeight: 36
+                        radius: 4
+                        color: parent.down ? "#b71c1c" : (parent.hovered ? "#e53935" : "#f44336")
+                    }
+                }
             }
         }
+    }
 
+    Connections {
+        target: backend
+
+        function onCollectionStarted() {
+            go.enabled = false
+            loadingOverlay.visible = true
+        }
+
+        function onCollectionFinished() {
+            go.enabled = true
+            loadingOverlay.visible = false
+        }
     }
 
 }

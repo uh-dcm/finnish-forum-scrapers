@@ -7,6 +7,11 @@ from ..items import PostItem
 import configparser
 
 class HevostalliSpider(scrapy.Spider):
+    """Scraper for the forum.hevostalli.net discussion forum.
+
+    Visits every forum section defined in the config, follows the thread
+    listings and extracts each post found on the thread pages.
+    """
 
     name = 'hevostalli'
     start_urls = ['http://forum.hevostalli.net/']
@@ -20,18 +25,20 @@ class HevostalliSpider(scrapy.Spider):
         super(HevostalliSpider, self).__init__(*args, **kwargs)
         self.formdata = []
         self.items = []
+        # Load the forum sections from config.ini.
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
 
     
     def parse(self, response):
-        forum = self.settings["FORUM"]
-        forum = self.config[forum]
-        url_start  = f'http://forum.hevostalli.net/list.php?f={forum}'
-        yield scrapy.Request(url_start, callback=self.parse_threads)
+        # Start from each configured forum section.
+        for forum in self.config["HEVOSTALLI_FORUMS"].values():
+            url_start  = f'http://forum.hevostalli.net/list.php?f={forum}'
+            yield scrapy.Request(url_start, callback=self.parse_threads)
         
 
     def parse_threads(self, response):
+        # Follow every thread link found in the forum listing.
         threads = response.xpath('//tr[contains(@class, "dps_row")]')
         for thread in threads:
             link = thread.xpath('.//td[contains(@class, "PhorumListRow title")]/a/@href').get()
@@ -41,6 +48,7 @@ class HevostalliSpider(scrapy.Spider):
         yield from self.parse_threads_next_page(response)
 
     def parse_threads_next_page(self, response):
+        # Follow the pagination link to the next listing page, if present.
         next_page = response.xpath("//a[contains(@href, 'a=2')]/@href").get()
         if next_page is not None:
             next_page = response.urljoin(next_page)
@@ -48,28 +56,49 @@ class HevostalliSpider(scrapy.Spider):
 
 
     def scrape_thread(self, response):
-        i = 0
-        ids= response.xpath(".//a/@name").getall()
-        for comment in response.xpath("//td[@class='postbodywrap']"):
+        # Grab the thread title from the page header.
+        thread = response.xpath("//td[@class='postsubject']/span[@class='PhorumTableHeader']/text()").get()
+        if thread:
+            thread = thread.strip()
+        # Post ids are stored in the name attributes of anchor tags.
+        ids = response.xpath(".//a/@name").getall()
+        for i, comment in enumerate(response.xpath("//td[@class='postbodywrap']")):
             post = PostItem()
+            post["thread"] = thread
 
-            post["thread"] = response.xpath("//td[@class='postsubject']/span[@class='PhorumTableHeader']/text()").get().strip()
+            # The post data lives in the paragraph elements: author,
+            # timestamp and message body are positional fragments.
+            texts = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()
 
-            post["author"] = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()[1][1:].strip()
-            
-            body = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()[3:]
+            if len(texts) > 1:
+                # The author is the last fragment split by the nbsp char.
+                author_text = texts[1]
+                post["author"] = author_text.split('\xa0')[-1].strip() if '\xa0' in author_text else author_text.strip()
 
-            post["body"] = ' '.join([text.strip() for text in body if text.strip()])
-            
-            post["id"] = ids[i][6:]
-            i+=1
+            if len(texts) > 3:
+                # The message body starts at the fourth fragment.
+                body = texts[3:]
+                post["body"] = ' '.join([t.strip() for t in body if t.strip()])
 
-            pre_time = comment.xpath(".//p[@class='PhorumMessage']/text()").getall()[2].strip()[11:].strip()
-            parsed_date = datetime.strptime(pre_time, "%d.%m.%y %H:%M:%S")
-            iso_date = parsed_date.strftime("%Y-%m-%dT%H:%M:%S")
-            post["timestamp"] = iso_date
+            if i < len(ids) and ids[i] and len(ids[i]) > 6:
+                # Strip the leading 6 chars of the name attribute to get the post id.
+                post["id"] = ids[i][6:]
 
-            yield post
+            if len(texts) > 2:
+                # Parse the timestamp from the "dd.mm.yy hh:mm:ss" format.
+                date_text = texts[2].strip()
+                paiva = date_text.split('\xa0')[-1].strip() if '\xa0' in date_text else date_text
+                if len(paiva) > 10:
+                    paiva = paiva[-17:].strip()
+                try:
+                    parsed_date = datetime.strptime(paiva, "%d.%m.%y %H:%M:%S")
+                    post["timestamp"] = parsed_date.strftime("%Y-%m-%dT%H:%M:%S")
+                except (ValueError, IndexError):
+                    pass
+
+            # Only emit posts that could be parsed with a timestamp.
+            if post.get("timestamp"):
+                yield post
 
 
 

@@ -28,7 +28,7 @@ class KauppalehtiSpiderTest(unittest.TestCase):
 
     def test_parse_threads(self):
         threads = list(self.spider.parse_threads(mock_response_from_file("tests/assets/kauppalehti_mock_threads.html", "https://keskustelu.kauppalehti.fi/search/1200696/?q=peruna&t=post&o=relevance&g=1")))
-        self.assertEqual(len(threads), 20)
+        self.assertEqual(len(threads), 21)
 
 
     

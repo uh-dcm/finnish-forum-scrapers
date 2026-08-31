@@ -1,31 +1,51 @@
 # This Python file uses the following encoding: utf-8
 import sys
-from pathlib import Path
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Signal, Slot, QSettings
-
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
+from PySide6.QtCore import QObject, Signal, Slot, QUrl
 
 import pkgutil
 import inspect
 import threading
+import importlib
 
 import uh_scrapy.spiders as spiders_pkg
 from scrapy import Spider
 
+# Why it works lol
+try:
+    from resources import resource_path
+except ImportError:
+    from .resources import resource_path
+
+# PyInstaller is a big mess and doesn't handle dynamic imports well. We need to explicitly
+# import all spider modules so they are included in the frozen app. This is done in the spec file, 
+# but we also need to import them here so we can access their classes.
+SPIDER_MODULES = [
+    "hevostalli_spider",
+    "hs_spider",
+    "kauppalehti_spider",
+    "kaksplus_spider",
+    "vauva_spider",
+    "yle_spider",
+    "test_spider",
+]
+
 def load_spider_classes():
     spider_classes = {}
 
-    # Iterate over all modules in the spiders/ directory
-    for module_info in pkgutil.iter_modules(spiders_pkg.__path__):
-        module_name = module_info.name
+    # When frozen, iterate the known module names; otherwise auto-discover.
+    if getattr(sys, "frozen", False):
+        module_names = SPIDER_MODULES
+    else:
+        module_names = [m.name for m in pkgutil.iter_modules(spiders_pkg.__path__)]
+
+    for module_name in module_names:
         full_name = f"{spiders_pkg.__name__}.{module_name}"
 
         # Dynamically import module
-        module = __import__(full_name, fromlist=[''])
+        module = importlib.import_module(full_name)
 
         # Extract classes defined in this module
         for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -45,33 +65,53 @@ def load_spider_classes():
 
 spiders = load_spider_classes()
 
-def start_spider( process ):
-    process.start()
-
 class Backend(QObject):
-    @Slot('QVariantList',str,str,str, str)
-    def on_spider_start(self, forums, search, startDate, endDate, file ):
+    collectionStarted = Signal()
+    collectionFinished = Signal()
 
-        custom = {
-            'QUERY' : search,
-            'TIMEFROM': startDate,
-            'TIMETO': endDate,
-            'ITEM_PIPELINES': {
-                'uh_scrapy.pipelines.TimestampFilterPipeline': 1,
-            },
-        }
+    def __init__(self):
+        super().__init__()
+        self._process = None
+        self._stop_event = None
 
-        settings = get_project_settings()
-        settings.update(custom)
-        
-        ## start spiders
-        for forum in forums:
-            spider = spiders[ forum ]
-            settings['FEEDS'] = { file : {'format': 'csv', 'overwrite': False} }
-            process = CrawlerProcess(settings)
-            process.crawl( spider.name )
-            t = threading.Thread(target=start_spider, args=[process] )
-            t.start()
+    @Slot('QVariantList',str,str,str, str, bool)
+    def on_spider_start(self, forums, search, startDate, endDate, file, use_lemmatization=True):
+        # Guard against starting a collection while another is already running.
+        if self._process is not None or not forums:
+            return
+
+        try:
+            from run_collection import run_spiders
+        except ImportError:
+            from .run_collection import run_spiders
+
+        spider_names = [spiders[forum].name for forum in forums]
+        self._stop_event = threading.Event()
+
+        def run():
+            try:
+                run_spiders(spider_names, search, startDate, endDate, file, self._stop_event, use_lemmatization)
+            finally:
+                self._process = None
+                self._stop_event = None
+                self.collectionFinished.emit()
+
+        try:
+            self._process = threading.Thread(target=run, daemon=True)
+            self._process.start()
+        except Exception as e:
+            print("Failed to start collection:", e)
+            self._process = None
+            self._stop_event = None
+            return
+
+        self.collectionStarted.emit()
+
+    @Slot()
+    def on_spider_stop(self):
+        # Request a graceful stop of the running collection, if any.
+        if self._stop_event is not None:
+            self._stop_event.set()
 
 if __name__ == "__main__":
 
@@ -85,8 +125,8 @@ if __name__ == "__main__":
     engine.rootContext().setContextProperty("spiders", list(spiders.keys()) )
     engine.rootContext().setContextProperty("backend", backend)
 
-    qml_file = Path(__file__).resolve().parent / "main.qml"
-    engine.load(qml_file)
+    qml_file = resource_path("main.qml")
+    engine.load(QUrl.fromLocalFile(str(qml_file)))
 
     if not engine.rootObjects():
         sys.exit(-1)

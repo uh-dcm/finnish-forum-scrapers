@@ -8,6 +8,11 @@ from ..items import PostItem
 
 items = []
 class KaksplusSpider(scrapy.Spider):
+    """Scraper for the Kaksplus.fi discussion forum.
+
+    Performs a search on the forum using the configured query and time
+    window, follows the matching threads and extracts every post.
+    """
 
     name = "kaksplus"
     start_urls = ['https://keskustelu.kaksplus.fi/keskustelu/haku/']
@@ -28,33 +33,26 @@ class KaksplusSpider(scrapy.Spider):
         self.subsections = ''
         self.sort =''
 
+        # Load the forum sections from config.ini.
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
 
     
     def parse(self, response):
         self.query = self.settings["QUERY"].replace(" ", "%20")
-        self.title_only = self.settings["TITLEONLY"]
-        self.newer_than = self.settings["TIMEFROM"]
-        self.min_reply = self.settings["MINREPLY"]
-        self.forum_section = self.settings["FORUMSECTION"]
-        self.subsections = self.settings["SUBSECTIONS"]
-        self.sort =self.settings["SORTING"]
 
+        # The forum (XenForo) search form is a POST request; fetch the
+        # CSRF token from the page first.
         _xfToken = response.css('input[name="_xfToken"]::attr(value)').get()
         formdata = {
-            "keywords": self.query,  
-            "c[title_only]": '1' if self.title_only else '0',  
-            "c[newer_than]": self.newer_than,  
-            "c[min_reply_count]": self.min_reply,  
-            "c[nodes][]": self.config['KAKSPLUS_FORUM_SECTIONS'][self.forum_section],  
-            "c[child_nodes]": '1' if self.subsections else '0',  
-            "order": self.sort,  
-            "grouped": '1',    
-            "_xfToken": _xfToken,  
+            "keywords": self.query,
+            "c[title_only]": '0',
+            "c[newer_than]": self.settings["TIMEFROM"],
+            "c[min_reply_count]": '0',
+            "order": 'date',
+            "grouped": '1',
+            "_xfToken": _xfToken,
         }
-        print(formdata)
-
         yield FormRequest(
             url='https://keskustelu.kaksplus.fi/keskustelu/haku/search',
             formdata=formdata,
@@ -63,6 +61,7 @@ class KaksplusSpider(scrapy.Spider):
         )
 
     def parse_threads(self, response):
+        # Follow every thread link found in the search results.
         links = response.xpath('//h3[@class="contentRow-title"]/a/@href').getall()
         for link in links:
             url = response.urljoin(link)
@@ -71,6 +70,7 @@ class KaksplusSpider(scrapy.Spider):
         yield from self.parse_threads_next_page(response)
 
     def parse_threads_next_page(self, response):
+        # Follow the "next page" pagination link, if present.
         next_page = response.xpath('//a[@class="pageNav-jump pageNav-jump--next"]/@href').get()
         if next_page is not None:
             next_page = response.urljoin(next_page)
@@ -78,15 +78,18 @@ class KaksplusSpider(scrapy.Spider):
 
 
     def scrape_thread(self, response):
+        # Get the thread id from the data-content-key attribute of the page.
         thread = response.xpath('//html/@data-content-key').get()[7:]
         
         
+        # Extract each individual post from the thread page.
         for comment in response.xpath('//article[contains(@class, "message--post")]'):
             post = PostItem()
-            body = comment.xpath('.//div[@class="bbWrapper"]/text()').getall()
+            body = comment.xpath('.//div[@class="bbWrapper"]//text()').getall()
             post['id'] = comment.xpath('./@id').get()[8:]
             post['author'] = comment.xpath('./@data-author').get()
             post['thread'] = thread
+            # Strip whitespace from each text fragment before joining.
             post['body'] = ' '.join([text.strip() for text in body if text.strip()])
             post['timestamp'] = comment.xpath('.//time/@datetime').get()
             yield post
@@ -94,6 +97,7 @@ class KaksplusSpider(scrapy.Spider):
         yield from self.scrape_thread_next_page(response)
 
     def scrape_thread_next_page(self, response):
+        # Follow the pagination link to the next page of posts.
         next_page =  response.xpath('//a[@class="pageNav-jump pageNav-jump--next"]/@href').get()
         if next_page is not None:
             next_page = response.urljoin(next_page)
